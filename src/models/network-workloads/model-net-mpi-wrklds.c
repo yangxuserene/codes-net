@@ -1378,7 +1378,7 @@ void nw_test_finalize(nw_state* s, tw_lp* lp)
 {
     int written = 0;
     if(s->app_id != -1)
-        written = sprintf(s->output_buf, "# Format <LP ID> <Terminal ID> <Total sends> <Total Recvs> <Bytes sent> <Bytes recvd> <Send time> <Comm. time> <Compute time>");
+        //written = sprintf(s->output_buf, "# Format <APP_ID> <LP ID> <Terminal ID> <Total sends> <Total Recvs> <Bytes sent> <Bytes recvd> <Send time> <Comm. time> <Compute time>\n");
 	if(s->app_id != -1)
 	{
 		printf("\n LP %llu unmatched irecvs %d unmatched sends %d Total sends %ld receives %ld collectives %ld delays %ld wait alls %ld waits %ld send time %lf wait %lf", 
@@ -1389,7 +1389,7 @@ void nw_test_finalize(nw_state* s, tw_lp* lp)
 		   printQueue(lp->gid, s->arrival_queue, "isend");
 	    }
         
-            written += sprintf(s->output_buf + written, "\n %lu %lu %ld %ld %ld %ld %lf %lf %lf", lp->gid, s->nw_id, s->num_sends, s->num_recvs, s->num_bytes_sent, 
+            written += sprintf(s->output_buf + written, "\n APP %ld\t Rank %ld\t %lu\t %lu\t %ld\t %ld\t %ld\t %ld\t %lf\t %lf\t %lf", s->app_id, s->local_rank, lp->gid, s->nw_id, s->num_sends, s->num_recvs, s->num_bytes_sent, 
                 s->num_bytes_recvd, s->send_time, s->elapsed_time - s->compute_time, s->compute_time);
             lp_io_write(lp->gid, "mpi-replay-stats", written, s->output_buf);
 
