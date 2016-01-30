@@ -1297,7 +1297,7 @@ static void get_next_mpi_operation(nw_state* s, tw_bf * bf, nw_message * m, tw_l
         s->num_completed++;
 
         if(s->nw_id == TRACK && s->num_completed % 10000 == 0)
-            printf("\n Status: LP %llu completed %ld MPI operations ", 
+            printf("\n Status: LP %llu completed %lld MPI operations ", 
                     s->nw_id, s->num_completed);
 
         m->saved_op = mpi_op;
@@ -1389,7 +1389,7 @@ void nw_test_finalize(nw_state* s, tw_lp* lp)
 		   printQueue(lp->gid, s->arrival_queue, "isend");
 	    }
         
-            written += sprintf(s->output_buf + written, "\n APP %ld\t Rank %ld\t %lu\t %lu\t %ld\t %ld\t %ld\t %ld\t %lf\t %lf\t %lf", s->app_id, s->local_rank, lp->gid, s->nw_id, s->num_sends, s->num_recvs, s->num_bytes_sent, 
+            written += sprintf(s->output_buf + written, "\n APP %ld\t Rank %ld\t %llu\t %llu\t %ld\t %ld\t %ld\t %ld\t %lf\t %lf\t %lf", s->app_id, s->local_rank, lp->gid, s->nw_id, s->num_sends, s->num_recvs, s->num_bytes_sent, 
                 s->num_bytes_recvd, s->send_time, s->elapsed_time - s->compute_time, s->compute_time);
             lp_io_write(lp->gid, "mpi-replay-stats", written, s->output_buf);
 
