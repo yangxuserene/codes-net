@@ -10,6 +10,7 @@
 
 #include <ross.h>
 
+#define DEBUG_LP 892
 #include "codes/jenkins-hash.h"
 #include "codes/codes_mapping.h"
 #include "codes/codes.h"
@@ -35,8 +36,8 @@
 #define DFLY_HASH_TABLE_SIZE 262144
 
 // debugging parameters
-#define TRACK 2
-#define TRACK_PKT 45543
+#define TRACK -1
+#define TRACK_PKT -1
 #define TRACK_MSG -1
 #define PRINT_ROUTER_TABLE 1
 #define DEBUG 0
@@ -51,7 +52,7 @@ long packet_gen = 0, packet_fin = 0;
 static double maxd(double a, double b) { return a < b ? b : a; }
 
 /* minimal and non-minimal packet counts for adaptive routing*/
-static unsigned int minimal_count=0, nonmin_count=0;
+static int minimal_count=0, nonmin_count=0;
 
 typedef struct dragonfly_param dragonfly_param;
 /* annotation-specific parameters (unannotated entry occurs at the 
@@ -305,7 +306,7 @@ static int dragonfly_rank_hash_compare(
         void *key, struct qhash_head *link)
 {
     struct dfly_hash_key *message_key = (struct dfly_hash_key *)key;
-    struct dfly_qhash_entry *tmp;
+    struct dfly_qhash_entry *tmp = NULL;
 
     tmp = qhash_entry(link, struct dfly_qhash_entry, hash_link);
     
@@ -317,10 +318,14 @@ static int dragonfly_rank_hash_compare(
 }
 static int dragonfly_hash_func(void *k, int table_size)
 {
-	struct dfly_hash_key *tmp = (struct dfly_hash_key *)k;
-    uint32_t pc = 0, pb = 0;
-	bj_hashlittle2(tmp, sizeof(*tmp), &pc, &pb);
-    return (int)(pc % (uint32_t)(table_size - 1));	
+    struct dfly_hash_key *tmp = (struct dfly_hash_key *)k;
+    //uint32_t pc = 0, pb = 0;	
+    //bj_hashlittle2(tmp, sizeof(*tmp), &pc, &pb);
+    uint64_t key = (~tmp->message_id) + (tmp->message_id << 18);
+    key = key * 21;
+    key = ~key ^ (tmp->sender_id >> 4);
+    key = key * tmp->sender_id; 
+    return (int)(key & (table_size - 1));	
 }
 
 /* convert GiB/s and bytes to ns */
@@ -378,23 +383,6 @@ static void prepend_to_terminal_message_list(
     thisq[index] = msg;
 }
 
-static void create_prepend_to_terminal_message_list(
-        terminal_message_list ** thisq,
-        terminal_message_list ** thistail,
-        int index, 
-        terminal_message * msg) {
-    terminal_message_list* new_entry = (terminal_message_list*)malloc(
-        sizeof(terminal_message_list));
-    init_terminal_message_list(new_entry, msg);
-    if(msg->remote_event_size_bytes) {
-        void *m_data = model_net_method_get_edata(DRAGONFLY, msg);
-        size_t s = msg->remote_event_size_bytes + msg->local_event_size_bytes;
-        new_entry->event_data = (void*)malloc(s);
-        memcpy(new_entry->event_data, m_data, s);
-    }
-    prepend_to_terminal_message_list( thisq, thistail, index, new_entry);
-}
-
 static terminal_message_list* return_head(
         terminal_message_list ** thisq,
         terminal_message_list ** thistail,
@@ -433,9 +421,9 @@ static void dragonfly_read_config(const char * anno, dragonfly_param *params){
     // shorthand
     dragonfly_param *p = params;
 
-    configuration_get_value_int(&config, "PARAMS", "num_routers", anno,
+    int rc = configuration_get_value_int(&config, "PARAMS", "num_routers", anno,
             &p->num_routers);
-    if(p->num_routers <= 0) {
+    if(rc) {
         p->num_routers = 4;
         fprintf(stderr, "Number of dimensions not specified, setting to %d\n",
                 p->num_routers);
@@ -443,44 +431,44 @@ static void dragonfly_read_config(const char * anno, dragonfly_param *params){
 
     p->num_vcs = 3;
 
-    configuration_get_value_int(&config, "PARAMS", "local_vc_size", anno, &p->local_vc_size);
-    if(!p->local_vc_size) {
+    rc = configuration_get_value_int(&config, "PARAMS", "local_vc_size", anno, &p->local_vc_size);
+    if(rc) {
         p->local_vc_size = 1024;
         fprintf(stderr, "Buffer size of local channels not specified, setting to %d\n", p->local_vc_size);
     }
 
-    configuration_get_value_int(&config, "PARAMS", "global_vc_size", anno, &p->global_vc_size);
-    if(!p->global_vc_size) {
+    rc = configuration_get_value_int(&config, "PARAMS", "global_vc_size", anno, &p->global_vc_size);
+    if(rc) {
         p->global_vc_size = 2048;
         fprintf(stderr, "Buffer size of global channels not specified, setting to %d\n", p->global_vc_size);
     }
 
-    configuration_get_value_int(&config, "PARAMS", "cn_vc_size", anno, &p->cn_vc_size);
-    if(!p->cn_vc_size) {
+    rc = configuration_get_value_int(&config, "PARAMS", "cn_vc_size", anno, &p->cn_vc_size);
+    if(rc) {
         p->cn_vc_size = 1024;
         fprintf(stderr, "Buffer size of compute node channels not specified, setting to %d\n", p->cn_vc_size);
     }
 
-    configuration_get_value_int(&config, "PARAMS", "chunk_size", anno, &p->chunk_size);
-    if(!p->chunk_size) {
+    rc = configuration_get_value_int(&config, "PARAMS", "chunk_size", anno, &p->chunk_size);
+    if(rc) {
         p->chunk_size = 512;
         fprintf(stderr, "Chunk size for packets is specified, setting to %d\n", p->chunk_size);
     }
 
-    configuration_get_value_double(&config, "PARAMS", "local_bandwidth", anno, &p->local_bandwidth);
-    if(!p->local_bandwidth) {
+    rc = configuration_get_value_double(&config, "PARAMS", "local_bandwidth", anno, &p->local_bandwidth);
+    if(rc) {
         p->local_bandwidth = 5.25;
         fprintf(stderr, "Bandwidth of local channels not specified, setting to %lf\n", p->local_bandwidth);
     }
 
-    configuration_get_value_double(&config, "PARAMS", "global_bandwidth", anno, &p->global_bandwidth);
-    if(!p->global_bandwidth) {
+    rc = configuration_get_value_double(&config, "PARAMS", "global_bandwidth", anno, &p->global_bandwidth);
+    if(rc) {
         p->global_bandwidth = 4.7;
         fprintf(stderr, "Bandwidth of global channels not specified, setting to %lf\n", p->global_bandwidth);
     }
 
-    configuration_get_value_double(&config, "PARAMS", "cn_bandwidth", anno, &p->cn_bandwidth);
-    if(!p->cn_bandwidth) {
+    rc = configuration_get_value_double(&config, "PARAMS", "cn_bandwidth", anno, &p->cn_bandwidth);
+    if(rc) {
         p->cn_bandwidth = 5.25;
         fprintf(stderr, "Bandwidth of compute node channels not specified, setting to %lf\n", p->cn_bandwidth);
     }
@@ -573,11 +561,12 @@ static void dragonfly_report_stats()
    /* print statistics */
    if(!g_tw_mynode)
    {	
-      printf(" Average number of hops traversed %f average chunk latency %lf us maximum chunk latency %lf us avg message size %lf bytes finished messages %ld finished chunks %ld \n", (float)avg_hops/total_finished_chunks, avg_time/(total_finished_chunks*1000), max_time/1000, (float)final_msg_sz/total_finished_msgs, total_finished_msgs, total_finished_chunks);
+      printf(" Average number of hops traversed %f average chunk latency %lf us maximum chunk latency %lf us avg message size %lf bytes finished messages %lld finished chunks %lld \n", (float)avg_hops/total_finished_chunks, avg_time/(total_finished_chunks*1000), max_time/1000, (float)final_msg_sz/total_finished_msgs, total_finished_msgs, total_finished_chunks);
      if(routing == ADAPTIVE || routing == PROG_ADAPTIVE)
-              printf("\n ADAPTIVE ROUTING STATS: %d chunks routed minimally %d chunks routed non-minimally completed packets %lld ", total_minimal_packets, total_nonmin_packets, total_finished_chunks);
+              printf("\n ADAPTIVE ROUTING STATS: %d chunks routed minimally %d chunks routed non-minimally completed packets %lld \n", 
+                      total_minimal_packets, total_nonmin_packets, total_finished_chunks);
  
-  printf("\n Total packets generated %ld finished %ld ", total_gen, total_fin);
+      printf("\n Total packets generated %ld finished %ld \n", total_gen, total_fin);
    }
    return;
 }
@@ -1062,7 +1051,7 @@ void packet_generate(terminal_state * s, tw_bf * bf, terminal_message * msg,
 
   //if(msg->dest_terminal_id == TRACK)
   if(msg->packet_ID == TRACK_PKT)
-    printf("\n Packet %ld generated at terminal %d dest %ld size %d num chunks %d ", 
+    printf("\n Packet %llu generated at terminal %d dest %llu size %llu num chunks %d ", 
             msg->packet_ID, s->terminal_id, msg->dest_terminal_id,
             msg->packet_size, num_chunks);
 
@@ -1161,11 +1150,11 @@ void packet_send_rc(terminal_state * s, tw_bf * bf, terminal_message * msg,
       if(bf->c4) {
         s->in_send_loop = 1;
       }
-      /*if(bf->c5)
+      if(bf->c5)
       {
           codes_local_latency_reverse(lp);
           s->issueIdle = 1;
-      }*/
+      }
       return;
 }
 /* sends the packet from the current dragonfly compute node to the attached router */
@@ -1260,11 +1249,11 @@ void packet_send(terminal_state * s, tw_bf * bf, terminal_message * msg,
     bf->c4 = 1;
     s->in_send_loop = 0;
   }
-  /*if(s->issueIdle) {
+  if(s->issueIdle) {
     bf->c5 = 1;
     s->issueIdle = 0;
     model_net_method_idle_event(codes_local_latency(lp), 0, lp);
-  }*/
+  }
   return;
 }
 
@@ -1315,15 +1304,13 @@ void packet_arrive_rc(terminal_state * s, tw_bf * bf, terminal_message * msg, tw
        
        if(bf->c7)
         {
-            if(hash_link)
-                printf("\n Num chunks %d ", tmp->num_chunks);
-            //assert(!hash_link);
+            assert(!hash_link);
+            N_finished_msgs--;
             s->finished_msgs--;
             total_msg_sz -= msg->total_size;
-            N_finished_msgs--;
             s->total_msg_size -= msg->total_size;
 
-	        struct dfly_qhash_entry * d_entry_pop = rc_stack_pop(s->st);
+	    struct dfly_qhash_entry * d_entry_pop = rc_stack_pop(s->st);
             qhash_add(s->rank_tbl, &key, &(d_entry_pop->hash_link));
             s->rank_tbl_pop++; 
 
@@ -1337,6 +1324,13 @@ void packet_arrive_rc(terminal_state * s, tw_bf * bf, terminal_message * msg, tw
        assert(tmp);
        tmp->num_chunks--;
 
+       if(bf->c5)
+	{
+	   assert(hash_link);
+	   qhash_del(hash_link);
+	   free(tmp->remote_event_data);
+	   free(tmp);		
+	}
        return;
 }
 void send_remote_event(terminal_state * s, terminal_message * msg, tw_lp * lp, tw_bf * bf, char * event_data, int remote_event_size)
@@ -1373,11 +1367,39 @@ void packet_arrive(terminal_state * s, tw_bf * bf, terminal_message * msg,
     // NIC aggregation - should this be a separate function?
     // Trigger an event on receiving server
 
+    struct dfly_hash_key key;
+    key.message_id = msg->message_id; 
+    key.sender_id = msg->sender_lp;
+    
+    struct qhash_head *hash_link = NULL;
+    struct dfly_qhash_entry * tmp = NULL;
+      
+    hash_link = qhash_search(s->rank_tbl, &key);
+    
+    if(hash_link)
+        tmp = qhash_entry(hash_link, struct dfly_qhash_entry, hash_link);
+
+    int total_chunks = msg->total_size / s->params->chunk_size;
+
+    if(msg->total_size % s->params->chunk_size)
+          total_chunks++;
+
+    if(!total_chunks)
+          total_chunks = 1;
+
+    if(tmp)
+    {
+        if(tmp->num_chunks >= total_chunks || tmp->num_chunks == 0)
+        {
+           tw_output(lp, "\n invalid number of chunks %d for LP %ld ", tmp->num_chunks, lp->gid);
+           tw_lp_suspend(lp, 0, 0);
+           return;
+        }
+    }
     assert(lp->gid == msg->dest_terminal_id);
 
-//    if(lp->gid == TRACK)
     if(msg->packet_ID == TRACK_PKT)
-        printf("\n Packet %ld arrived at lp %ld hops %d", msg->packet_ID, lp->gid, msg->my_N_hop);
+        printf("\n Packet %llu arrived at lp %llu hops %d", msg->packet_ID, lp->gid, msg->my_N_hop);
   
   tw_stime ts = g_tw_lookahead + s->params->credit_delay + tw_rand_unif(lp->rng);
 
@@ -1404,14 +1426,6 @@ void packet_arrive(terminal_state * s, tw_bf * bf, terminal_message * msg,
   assert(lp->gid != msg->src_terminal_id);
 
   int num_chunks = msg->packet_size / s->params->chunk_size;
-  int total_chunks = msg->total_size / s->params->chunk_size;
-
-  if(msg->total_size % s->params->chunk_size)
-      total_chunks++;
-
-  if(!total_chunks)
-      total_chunks = 1;
-
   if (msg->packet_size % s->params->chunk_size)
     num_chunks++;
 
@@ -1463,17 +1477,9 @@ void packet_arrive(terminal_state * s, tw_bf * bf, terminal_message * msg,
    /* Now retreieve the number of chunks completed from the hash and update
     * them */
    void *m_data_src = model_net_method_get_edata(DRAGONFLY, msg);
-   struct qhash_head *hash_link = NULL;
-   struct dfly_qhash_entry * tmp = NULL;
-   struct dfly_hash_key key;
-   key.message_id = msg->message_id; 
-   key.sender_id = msg->sender_lp;
-  
-   hash_link = qhash_search(s->rank_tbl, &key);
-   tmp = qhash_entry(hash_link, struct dfly_qhash_entry, hash_link);
 
    /* If an entry does not exist then create one */
-   if(!hash_link)
+   if(!tmp)
    {
        bf->c5 = 1;
        struct dfly_qhash_entry * d_entry = malloc(sizeof (struct dfly_qhash_entry));
@@ -1484,13 +1490,12 @@ void packet_arrive(terminal_state * s, tw_bf * bf, terminal_message * msg,
        qhash_add(s->rank_tbl, &key, &(d_entry->hash_link));
        s->rank_tbl_pop++;
       
-       hash_link = qhash_search(s->rank_tbl, &key);
-       tmp = qhash_entry(hash_link, struct dfly_qhash_entry, hash_link);
+       hash_link = &(d_entry->hash_link);
+       tmp = d_entry;
    }
     
     assert(tmp);
     tmp->num_chunks++;
-
 
     /* if its the last chunk of the packet then handle the remote event data */
     if(msg->chunk_id == num_chunks - 1)
@@ -1519,7 +1524,6 @@ void packet_arrive(terminal_state * s, tw_bf * bf, terminal_message * msg,
      * callee*/
     assert(tmp->num_chunks <= total_chunks);
 
-
     if(tmp->num_chunks == total_chunks)
     {
         bf->c7 = 1;
@@ -1529,11 +1533,11 @@ void packet_arrive(terminal_state * s, tw_bf * bf, terminal_message * msg,
         s->total_msg_size += msg->total_size;
         s->finished_msgs++;
         
-        assert(tmp->remote_event_data && tmp->remote_event_size);
+        assert(tmp->remote_event_data && tmp->remote_event_size > 0);
         send_remote_event(s, msg, lp, bf, tmp->remote_event_data, tmp->remote_event_size);
         /* Remove the hash entry */
         qhash_del(hash_link);
-        rc_stack_push(lp, tmp, free, s->st);
+        rc_stack_push(lp, tmp, free_tmp, s->st);
         s->rank_tbl_pop--;
    }
   return;
@@ -1924,7 +1928,7 @@ dragonfly_terminal_final( terminal_state * s,
     if(!s->terminal_id)
         written = sprintf(s->output_buf, "# Format <LP id> <Terminal ID> <Total Data Size> <Total Time Spent> <# Packets finished> <Avg hops> <Busy Time>\n");
 
-    written += sprintf(s->output_buf + written, "%lu\t %u\t %ld\t %lf\t %ld\t %lf\t %lf\n",
+    written += sprintf(s->output_buf + written, "%llu\t %u\t %ld\t %lf\t %ld\t %lf\t %lf\n",
             lp->gid, s->terminal_id, s->total_msg_size, s->total_time, 
             s->finished_packets, (double)s->total_hops/s->finished_chunks,
             s->busy_time);
@@ -1943,7 +1947,7 @@ dragonfly_terminal_final( terminal_state * s,
     fclose(dragonfly_log);
     */
     if(s->terminal_msgs[0] != NULL) 
-      printf("[%lu] leftover terminal messages \n", lp->gid);
+      printf("[%llu] leftover terminal messages \n", lp->gid);
 
 
     //if(s->packet_gen != s->packet_fin)
@@ -1965,11 +1969,11 @@ void dragonfly_router_final(router_state * s,
     for(i = 0; i < s->params->radix; i++) {
       for(j = 0; j < 3; j++) {
         if(s->queued_msgs[i][j] != NULL) {
-          printf("[%lu] leftover queued messages %d %d %d\n", lp->gid, i, j,
+          printf("[%llu] leftover queued messages %d %d %d\n", lp->gid, i, j,
           s->vc_occupancy[i][j]);
         }
         if(s->pending_msgs[i][j] != NULL) {
-          printf("[%lu] lefover pending messages %d %d\n", lp->gid, i, j);
+          printf("[%llu] lefover pending messages %d %d\n", lp->gid, i, j);
         }
       }
     }
@@ -1984,7 +1988,7 @@ void dragonfly_router_final(router_state * s,
         written += sprintf(s->output_buf + written, "\n # Router ports in the order: %d local channels, %d global channels ", 
                 p->num_routers, p->num_global_channels);
     }
-    written += sprintf(s->output_buf + written, "\n %ld\t %d\t %d\t ", 
+    written += sprintf(s->output_buf + written, "\n %llu\t %d\t %d\t ", 
             lp->gid,
             s->router_id / p->num_routers,
             s->router_id % p->num_routers);
@@ -2001,13 +2005,13 @@ void dragonfly_router_final(router_state * s,
         written += sprintf(s->output_buf2 + written, "\n # Router ports in the order: %d local channels, %d global channels ",
             p->num_routers, p->num_global_channels);
     }
-    written += sprintf(s->output_buf2 + written, "\n %ld\t %d\t %d\t",
+    written += sprintf(s->output_buf2 + written, "\n %llu\t %d\t %d\t",
         lp->gid,
         s->router_id / p->num_routers,
         s->router_id % p->num_routers);
 
     for(int d = 0; d < p->num_routers + p->num_global_channels; d++) 
-        written += sprintf(s->output_buf2 + written, " %ld\t", s->link_traffic[d]);
+        written += sprintf(s->output_buf2 + written, " %lld\t", s->link_traffic[d]);
 
     sprintf(s->output_buf2 + written, "\n");
     lp_io_write(lp->gid, "dragonfly-router-traffic", written, s->output_buf2);
@@ -2213,8 +2217,8 @@ static int do_adaptive_routing( router_state * s,
       + s->queued_count[minimal_out_port];
 
   // Now get the expected number of hops to be traversed for both routes 
-  int num_min_hops = get_num_hops(s->router_id, dest_router_id, 
-      s->params->num_routers, 0, s->params->num_groups);
+  //int num_min_hops = get_num_hops(s->router_id, dest_router_id, 
+  //    s->params->num_routers, 0, s->params->num_groups);
 
   int intm_router_id = getRouterFromGroupID(msg->intm_group_id, 
       s->router_id / s->params->num_routers, s->params->num_routers, 
@@ -2242,16 +2246,16 @@ static int do_adaptive_routing( router_state * s,
   }
   q_avg = q_avg / (s->params->radix - 1);
 
-  int min_out_chan = minimal_out_port;
-  int nonmin_out_chan = nonmin_out_port;
+  //int min_out_chan = minimal_out_port;
+  //int nonmin_out_chan = nonmin_out_port;
 
   /* Adding history window approach, not taking the queue status at every 
    * simulation time thats why, we are maintaining the current history 
    * window number and an average of the previous history window number. */
-  int min_hist_count = s->cur_hist_num[min_out_chan] + 
-    (s->prev_hist_num[min_out_chan]/2);
-  int nonmin_hist_count = s->cur_hist_num[nonmin_out_chan] + 
-    (s->prev_hist_num[min_out_chan]/2);
+  //int min_hist_count = s->cur_hist_num[min_out_chan] + 
+  //  (s->prev_hist_num[min_out_chan]/2);
+  //int nonmin_hist_count = s->cur_hist_num[nonmin_out_chan] + 
+  //  (s->prev_hist_num[min_out_chan]/2);
 
   int nonmin_port_count = s->vc_occupancy[nonmin_out_port][0] +
       s->vc_occupancy[nonmin_out_port][1] + s->vc_occupancy[nonmin_out_port][2]
@@ -2366,7 +2370,7 @@ router_packet_receive( router_state * s,
   cur_chunk->msg.next_stop = next_stop;
 
   if(msg->packet_ID == TRACK_PKT)
-      printf("\n Router packet %ld arrived lp id %ld final dest %ld output port %d ", msg->packet_ID, lp->gid, msg->dest_terminal_id, output_port);
+      printf("\n Router packet %llu arrived lp id %llu final dest %llu output port %d ", msg->packet_ID, lp->gid, msg->dest_terminal_id, output_port);
   
   if(output_port < s->params->num_routers) {
     output_chan = msg->my_l_hop;
