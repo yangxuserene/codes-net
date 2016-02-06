@@ -16,7 +16,7 @@
 
 #define TRACE -1
 #define TRACK 0
-
+static msg_size_scale = 10;
 /*global variable for loading multiple jobs' traces*/
 char workloads_conf_file[8192];//the file in which the path and name of each job's traces are
 char alloc_file[8192];// the file in which the preassgined LP lists for the jobs
@@ -931,6 +931,13 @@ void find_glp_for_msg( struct codes_workload_op * mpi_op , struct codes_jobmap_i
         mpi_op->u.send.source_rank = global_src_rank;
         mpi_op->u.recv.source_rank = global_src_rank;
     }
+    
+    if(jp_id->job == 0){
+        //printf("This is AMG\n");
+        mpi_op->u.send.num_bytes *= msg_size_scale;
+        mpi_op->u.recv.num_bytes *= msg_size_scale;
+    }
+
 
 }
 
