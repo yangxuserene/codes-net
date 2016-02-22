@@ -2217,8 +2217,8 @@ static int do_adaptive_routing( router_state * s,
       + s->queued_count[minimal_out_port];
 
   // Now get the expected number of hops to be traversed for both routes 
-  //int num_min_hops = get_num_hops(s->router_id, dest_router_id, 
-  //    s->params->num_routers, 0, s->params->num_groups);
+  int num_min_hops = get_num_hops(s->router_id, dest_router_id, 
+  s->params->num_routers, 0, s->params->num_groups);
 
   int intm_router_id = getRouterFromGroupID(msg->intm_group_id, 
       s->router_id / s->params->num_routers, s->params->num_routers, 
@@ -2260,8 +2260,11 @@ static int do_adaptive_routing( router_state * s,
   int nonmin_port_count = s->vc_occupancy[nonmin_out_port][0] +
       s->vc_occupancy[nonmin_out_port][1] + s->vc_occupancy[nonmin_out_port][2]
       + s->queued_count[nonmin_out_port];
-  //if(num_min_hops * (min_port_count - min_hist_count) <= (num_nonmin_hops * ((q_avg + 1) - nonmin_hist_count))) {
-    if(min_port_count <= nonmin_port_count) {
+    //VARIATION 1:
+    //if(num_min_hops * min_port_count <= num_nonmin_hops * nonmin_port_count){
+    // VARIATION 2:
+    if(num_min_hops * min_port_count <= (num_nonmin_hops * (q_avg +1))){
+    //if(min_port_count <= nonmin_port_count) {
     msg->path_type = MINIMAL;
     next_stop = minimal_next_stop;
     msg->intm_group_id = -1;
