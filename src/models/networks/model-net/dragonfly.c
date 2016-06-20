@@ -1041,7 +1041,7 @@ void packet_generate(terminal_state * s, tw_bf * bf, terminal_message * msg,
   if(!num_chunks)
     num_chunks = 1;
 
-  nic_ts = g_tw_lookahead + s->params->cn_delay * msg->packet_size + tw_rand_unif(lp->rng);
+  nic_ts = g_tw_lookahead + s->params->cn_delay * num_chunks + tw_rand_unif(lp->rng);
   
   msg->packet_ID = lp->gid + g_tw_nlp * s->packet_counter;
   msg->my_N_hop = 0;
@@ -2261,9 +2261,9 @@ static int do_adaptive_routing( router_state * s,
       s->vc_occupancy[nonmin_out_port][1] + s->vc_occupancy[nonmin_out_port][2]
       + s->queued_count[nonmin_out_port];
     //VARIATION 1:
-    //if(num_min_hops * min_port_count <= num_nonmin_hops * nonmin_port_count){
+    if(num_min_hops * min_port_count <= num_nonmin_hops * nonmin_port_count){
     // VARIATION 2:
-    if(num_min_hops * min_port_count <= (num_nonmin_hops * (q_avg +1))){
+    //if(num_min_hops * min_port_count <= (num_nonmin_hops * (q_avg +1))){
     //if(min_port_count <= nonmin_port_count) {
     msg->path_type = MINIMAL;
     next_stop = minimal_next_stop;
@@ -2528,12 +2528,12 @@ router_packet_send( router_state * s,
   if(!num_chunks)
       num_chunks = 1;
 
-  double bytetime;
-  if((cur_entry->msg.packet_size % s->params->chunk_size) && (cur_entry->msg.chunk_id == num_chunks - 1)) {
+  double bytetime = delay;
+  /*if((cur_entry->msg.packet_size % s->params->chunk_size) && (cur_entry->msg.chunk_id == num_chunks - 1)) {
       bytetime = delay * (cur_entry->msg.packet_size % s->params->chunk_size);
   } else {
     bytetime = delay * s->params->chunk_size;
-  }
+  }*/
   ts = g_tw_lookahead + tw_rand_unif( lp->rng) + bytetime + s->params->router_delay;
 
   msg->saved_available_time = s->next_output_available_time[output_port];

@@ -932,11 +932,11 @@ void find_glp_for_msg( struct codes_workload_op * mpi_op , struct codes_jobmap_i
         mpi_op->u.recv.source_rank = global_src_rank;
     }
     
-    if(jp_id->job == 0){
+//    if(jp_id->job == 0){
         //printf("This is AMG\n");
-        mpi_op->u.send.num_bytes *= msg_size_scale;
-        mpi_op->u.recv.num_bytes *= msg_size_scale;
-    }
+//        mpi_op->u.send.num_bytes *= msg_size_scale;
+//        mpi_op->u.recv.num_bytes *= msg_size_scale;
+//    }
 
 
 }
